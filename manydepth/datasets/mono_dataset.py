@@ -51,7 +51,6 @@ class MonoDataset(data.Dataset):
         self.num_scales = num_scales
 
         self.interp = Image.ANTIALIAS
-
         self.frame_idxs = frame_idxs
 
         self.is_train = is_train
@@ -178,8 +177,15 @@ class MonoDataset(data.Dataset):
             inputs[("inv_K", scale)] = torch.from_numpy(inv_K)
 
         if do_color_aug:
-            color_aug = transforms.ColorJitter.get_params(
+            #### THIS LINE WAS MODIFIED BY ME ####
+            # The original code uses torchvision==0.8.2 where ColorJitter.get_params() returns a transform
+            # In torchvision==0.12.0, it returns a tuple with a random index and the params for ColorJitter
+            # Format of the returned tuple: (random_idx, brightness, contrast, saturation, hue)
+            # So get_params() is not removed here.
+            color_aug = transforms.ColorJitter(
                 self.brightness, self.contrast, self.saturation, self.hue)
+            # color_aug = transforms.ColorJitter.get_params(
+            #     self.brightness, self.contrast, self.saturation, self.hue)
         else:
             color_aug = (lambda x: x)
 
