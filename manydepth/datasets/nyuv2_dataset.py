@@ -29,9 +29,10 @@ def pil_loader(path):
             return img.convert('RGB')
 
 
-class MonoDataset(data.Dataset):
+class NYUv2Dataset(data.Dataset):
     """Superclass for monocular dataloaders
     """
+
     def __init__(self,
                  data_path,
                  filenames,
@@ -42,7 +43,7 @@ class MonoDataset(data.Dataset):
                  is_train=False,
                  img_ext='.jpg',
                  ):
-        super(MonoDataset, self).__init__()
+        super().__init__()
 
         self.data_path = data_path
         self.filenames = filenames
@@ -50,7 +51,6 @@ class MonoDataset(data.Dataset):
         self.width = width
         self.num_scales = num_scales
 
-        # self.interp = Image.ANTIALIAS
         self.interp = transforms.InterpolationMode.LANCZOS
         self.frame_idxs = frame_idxs
 
@@ -59,6 +59,19 @@ class MonoDataset(data.Dataset):
 
         self.loader = pil_loader
         self.to_tensor = transforms.ToTensor()
+
+        # Intrinsic Matrix
+        # NOTE: Make sure your intrinsics matrix is *normalized* by the original image size
+        fx = 5.1885790117450188e+02
+        fy = 5.1946961112127485e+02
+        cx = 3.2558244941119034e+02
+        cy = 2.5373616633400465e+02
+        self.K = np.array([[fx, 0., cx, 0.],
+                           [0., fy, cy, 0.],
+                           [0., 0., 1., 0.],
+                           [0., 0., 0., 1.]], dtype=np.float32)
+        self.K[0, :] /= 640
+        self.K[1, :] /= 480
 
         # We need to specify augmentations differently in newer versions of torchvision.
         # We first try the newer tuple version; if this fails we fall back to scalars
@@ -110,8 +123,25 @@ class MonoDataset(data.Dataset):
     def __len__(self):
         return len(self.filenames)
 
-    def load_intrinsics(self, folder, frame_index):
+    def load_intrinsics(self):
         return self.K.copy()
+    
+    def index_to_folder_and_frame_idx(self, index):
+        """Convert index in the dataset to a folder name, frame_idx and any other bits
+        """
+        line = self.filenames[index].split()
+        folder = line[0]
+        frame_index = int(line[1])
+
+        return folder, frame_index
+    
+    def get_color(self, folder, frame_index, do_flip):
+        color = self.loader(self.get_image_path(folder, frame_index, is_depth=False))
+
+        if do_flip:
+            color = color.transpose(Image.FLIP_LEFT_RIGHT)
+
+        return color
 
     def __getitem__(self, index):
         """Returns a single training item from the dataset as a dictionary.
@@ -139,35 +169,25 @@ class MonoDataset(data.Dataset):
         do_color_aug = self.is_train and random.random() > 0.5
         do_flip = self.is_train and random.random() > 0.5
 
-        folder, frame_index, side = self.index_to_folder_and_frame_idx(index)
+        folder, frame_index = self.index_to_folder_and_frame_idx(index)
 
         poses = {}
-        if type(self).__name__ in ["CityscapesPreprocessedDataset", "CityscapesEvalDataset"]:
-            inputs.update(self.get_colors(folder, frame_index, side, do_flip))
-        else:
-            for i in self.frame_idxs:
-                if i == "s":
-                    other_side = {"r": "l", "l": "r"}[side]
-                    inputs[("color", i, -1)] = self.get_color(
-                        folder, frame_index, other_side, do_flip)
+        for i in self.frame_idxs:
+            try:
+                inputs[("color", i, -1)] = self.get_color(folder, frame_index + i, do_flip)
+            except FileNotFoundError as e:
+                if i != 0:
+                    # fill with dummy values
+                    inputs[("color", i, -1)] = Image.fromarray(np.zeros((100, 100, 3)).astype(np.uint8))
+                    poses[i] = None
                 else:
-                    try:
-                        inputs[("color", i, -1)] = self.get_color(
-                            folder, frame_index + i, side, do_flip)
-                    except FileNotFoundError as e:
-                        if i != 0:
-                            # fill with dummy values
-                            inputs[("color", i, -1)] = \
-                                Image.fromarray(np.zeros((100, 100, 3)).astype(np.uint8))
-                            poses[i] = None
-                        else:
-                            raise FileNotFoundError(f'Cannot find frame - make sure your '
-                                                    f'--data_path is set correctly, or try adding'
-                                                    f' the --png flag. {e}')
+                    raise FileNotFoundError(f'Cannot find frame - make sure your '
+                                            f'--data_path is set correctly, or try adding'
+                                            f' the --png flag. {e}')
 
         # adjusting intrinsics to match each scale in the pyramid
         for scale in range(self.num_scales):
-            K = self.load_intrinsics(folder, frame_index)
+            K = self.load_intrinsics()
 
             K[0, :] *= self.width // (2 ** scale)
             K[1, :] *= self.height // (2 ** scale)
@@ -197,17 +217,68 @@ class MonoDataset(data.Dataset):
             del inputs[("color_aug", i, -1)]
 
         if self.load_depth and False:
-            depth_gt = self.get_depth(folder, frame_index, side, do_flip)
+            depth_gt = self.get_depth(folder, frame_index, do_flip)
             inputs["depth_gt"] = np.expand_dims(depth_gt, 0)
             inputs["depth_gt"] = torch.from_numpy(inputs["depth_gt"].astype(np.float32))
 
+        # for i in self.frame_idxs:
+        #     im = inputs[("color_aug", i, 0)]
+        #     im = torch.permute(im, (1,2,0))
+        #     im = im.numpy()
+        #     print(im.shape)
+        #     im = Image.fromarray((im*255).astype(np.uint8))
+        #     im.save(f"im/{folder[folder.find('/')+1:]}_{frame_index + i}.png")
         return inputs
 
-    def get_color(self, folder, frame_index, side, do_flip):
-        raise NotImplementedError
-
     def check_depth(self):
+        return True
+
+    def get_depth(self, folder, frame_index, is_depth):
+        raise NotImplementedError
+    
+    def get_image_path(self, folder, frame_index, is_depth=False):
         raise NotImplementedError
 
-    def get_depth(self, folder, frame_index, side, do_flip):
-        raise NotImplementedError
+class NYUv2RawDataset(NYUv2Dataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def get_depth(self, folder, frame_index, do_flip):
+        """Returns a numpy array of the ground truth depth map"""
+        depth_gt = self.loader(self.get_image_path(folder, frame_index, is_depth=True))
+
+        if do_flip:
+            depth_gt = depth_gt.transpose(Image.FLIP_LEFT_RIGHT)
+
+        depth_gt = np.array(depth_gt) / 255 * 10
+        return depth_gt
+
+    def get_image_path(self, folder, frame_index, is_depth=False):
+        if is_depth:
+            image_path = os.path.join(self.data_path, folder, f"{folder}{frame_index}depth.{self.img_ext}")
+        else:
+            image_path = os.path.join(self.data_path, folder, f"{folder}{frame_index}rgb.{self.img_ext}")
+        return image_path
+
+
+class NYUv2_50K_Dataset(NYUv2Dataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def get_depth(self, folder, frame_index, do_flip):
+        """Returns a numpy array of the ground truth depth map"""
+        depth_gt = self.loader(self.get_image_path(folder, frame_index, is_depth=True))
+
+        if do_flip:
+            depth_gt = depth_gt.transpose(Image.FLIP_LEFT_RIGHT)
+
+        depth_gt = np.array(depth_gt) / 255 * 10
+        assert np.max(depth_gt) == 10, f"Max depth ({np.max(depth_gt)}) is larger than 10???"
+        return depth_gt
+
+    def get_image_path(self, folder, frame_index, is_depth=False):
+        if is_depth:
+            image_path = os.path.join(self.data_path, folder, f"{frame_index}.png")
+        else:
+            image_path = os.path.join(self.data_path, folder, f"{frame_index}.jpg")
+        return image_path
