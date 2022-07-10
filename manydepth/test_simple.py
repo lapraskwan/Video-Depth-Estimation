@@ -42,7 +42,7 @@ def parse_args():
 def load_and_preprocess_image(image_path, resize_width, resize_height):
     image = pil.open(image_path).convert('RGB')
     original_width, original_height = image.size
-    image = image.resize((resize_width, resize_height), pil.LANCZOS)
+    image = image.resize((resize_width, resize_height), pil.Resampling.LANCZOS)
     image = transforms.ToTensor()(image).unsqueeze(0)
     if torch.cuda.is_available():
         return image.cuda(), (original_height, original_width)

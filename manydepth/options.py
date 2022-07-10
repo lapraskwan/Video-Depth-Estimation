@@ -181,6 +181,9 @@ class MonodepthOptions:
                                  type=str,
                                  help="models to load",
                                  default=["encoder", "depth", "pose_encoder", "pose"])
+        self.parser.add_argument("--resnet_path",
+                                 type=str,
+                                 help="load Imagenet pretrained resnet from file instead of downloading from internet.")
 
         # LOGGING options
         self.parser.add_argument("--log_frequency",

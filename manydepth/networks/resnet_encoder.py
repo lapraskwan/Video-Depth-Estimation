@@ -45,7 +45,7 @@ class ResNetMultiImageInput(models.ResNet):
                 nn.init.constant_(m.bias, 0)
 
 
-def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1):
+def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1, resnet_path=None):
     """Constructs a ResNet model.
     Args:
         num_layers (int): Number of resnet layers. Must be 18 or 50
@@ -58,7 +58,10 @@ def resnet_multiimage_input(num_layers, pretrained=False, num_input_images=1):
     model = ResNetMultiImageInput(block_type, blocks, num_input_images=num_input_images)
 
     if pretrained:
-        loaded = model_zoo.load_url(models.resnet.model_urls['resnet{}'.format(num_layers)])
+        if resnet_path is None:
+            loaded = model_zoo.load_url(models.resnet.model_urls['resnet{}'.format(num_layers)])
+        else:
+            loaded = torch.load(os.path.join(resnet_path, f"resnet{num_layers}.pth"))
         loaded['conv1.weight'] = torch.cat(
             [loaded['conv1.weight']] * num_input_images, 1) / num_input_images
         model.load_state_dict(loaded)
@@ -74,7 +77,7 @@ class ResnetEncoderMatching(nn.Module):
 
     def __init__(self, num_layers, pretrained, input_height, input_width,
                  min_depth_bin=0.1, max_depth_bin=20.0, num_depth_bins=96,
-                 adaptive_bins=False, depth_binning='linear'):
+                 adaptive_bins=False, depth_binning='linear', resnet_path=None):
 
         super(ResnetEncoderMatching, self).__init__()
 
@@ -100,7 +103,11 @@ class ResnetEncoderMatching(nn.Module):
         if num_layers not in resnets:
             raise ValueError("{} is not a valid number of resnet layers".format(num_layers))
 
-        encoder = resnets[num_layers](pretrained)
+        encoder = resnets[num_layers](pretrained and resnet_path is None)
+        if pretrained and resnet_path:
+            pretrained_resnet_dict = torch.load(os.path.join(resnet_path, f"resnet{num_layers}.pth"))
+            encoder.load_state_dict(pretrained_resnet_dict)
+
         self.layer0 = nn.Sequential(encoder.conv1,  encoder.bn1, encoder.relu)
         self.layer1 = nn.Sequential(encoder.maxpool,  encoder.layer1)
         self.layer2 = encoder.layer2
@@ -335,7 +342,7 @@ class ResnetEncoder(nn.Module):
     """Pytorch module for a resnet encoder
     """
 
-    def __init__(self, num_layers, pretrained, num_input_images=1, **kwargs):
+    def __init__(self, num_layers, pretrained, num_input_images=1, resnet_path=None, **kwargs):
         super(ResnetEncoder, self).__init__()
 
         self.num_ch_enc = np.array([64, 64, 128, 256, 512])
@@ -350,9 +357,12 @@ class ResnetEncoder(nn.Module):
             raise ValueError("{} is not a valid number of resnet layers".format(num_layers))
 
         if num_input_images > 1:
-            self.encoder = resnet_multiimage_input(num_layers, pretrained, num_input_images)
+            self.encoder = resnet_multiimage_input(num_layers, pretrained, num_input_images, resnet_path)
         else:
-            self.encoder = resnets[num_layers](pretrained)
+            self.encoder = resnets[num_layers](pretrained and resnet_path is None)
+            if pretrained and resnet_path:
+                pretrained_resnet_dict = torch.load(os.path.join(resnet_path, f"resnet{num_layers}.pth"))
+                self.encoder.load_state_dict(pretrained_resnet_dict)
 
         if num_layers > 34:
             self.num_ch_enc[1:] *= 4

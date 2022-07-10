@@ -6,15 +6,16 @@ channels:
 dependencies:
   - opencv
   - matplotlib
-  - pytorch==1.11.0
-  - torchvision==0.12.0
-  - scikit-image==0.19.3
+  - pytorch=1.11.0 # 1.12.0?
+  - torchvision=0.12.0 # 0.13.0?
+  - scikit-image=0.19.3
   # - opencv=3.4.2
   # - matplotlib=3.1.2
   - numpy=1.19.5
   - pip
   - pip:
-    - Pillow==6.2.1
+    - Pillow==9.1.1
+    # - Pillow==6.2.1
     - tensorboardX==1.5
     # - scikit-image==0.16.2
     # - torch==1.7.1

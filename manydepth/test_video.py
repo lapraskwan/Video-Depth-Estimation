@@ -263,7 +263,7 @@ def test_video(args):
                 break
         
         # Skipping frames
-        if total_frames % args.depth_freq != 0:
+        if args.depth_freq and total_frames % args.depth_freq != 0:
             continue
 
         # Process frame to get depth
@@ -281,6 +281,8 @@ def test_video(args):
     
     time_elapsed = time.time() - start_time
     num_processed_frame = len(depth_map_deque)
+    print(f"Number of frames in the video: {total_frames}")
+    print(f"Number of frames processed: {num_processed_frame}")
     print(f"Depth Computation FPS: {num_processed_frame / time_elapsed}")
     
     cv.destroyAllWindows()

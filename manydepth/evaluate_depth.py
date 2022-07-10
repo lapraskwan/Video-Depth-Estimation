@@ -101,7 +101,7 @@ def evaluate(opt):
             decoder_path = os.path.join(opt.load_weights_folder, "depth.pth")
             encoder_class = networks.ResnetEncoderMatching
 
-        encoder_dict = torch.load(encoder_path)
+        encoder_dict = torch.load(encoder_path, map_location=torch.device('cpu'))
         try:
             HEIGHT, WIDTH = encoder_dict['height'], encoder_dict['width']
         except KeyError:
@@ -116,10 +116,11 @@ def evaluate(opt):
                                                      is_train=False)
 
         else:
+            img_ext = '.png' if opt.png else '.jpg'
             dataset = datasets.KITTIRAWDataset(opt.data_path, filenames,
                                                encoder_dict['height'], encoder_dict['width'],
                                                frames_to_load, 4,
-                                               is_train=False)
+                                               is_train=False, img_ext=img_ext)
         dataloader = DataLoader(dataset, opt.batch_size, shuffle=False, num_workers=opt.num_workers,
                                 pin_memory=True, drop_last=False)
 
@@ -136,8 +137,8 @@ def evaluate(opt):
                                 min_depth_bin=0.1, max_depth_bin=20.0,
                                 depth_binning=opt.depth_binning,
                                 num_depth_bins=opt.num_depth_bins)
-            pose_enc_dict = torch.load(os.path.join(opt.load_weights_folder, "pose_encoder.pth"))
-            pose_dec_dict = torch.load(os.path.join(opt.load_weights_folder, "pose.pth"))
+            pose_enc_dict = torch.load(os.path.join(opt.load_weights_folder, "pose_encoder.pth"), map_location=torch.device('cpu'))
+            pose_dec_dict = torch.load(os.path.join(opt.load_weights_folder, "pose.pth"), map_location=torch.device('cpu'))
 
             pose_enc = networks.ResnetEncoder(18, False, num_input_images=2)
             pose_dec = networks.PoseDecoder(pose_enc.num_ch_enc, num_input_features=1,
@@ -161,7 +162,7 @@ def evaluate(opt):
 
         model_dict = encoder.state_dict()
         encoder.load_state_dict({k: v for k, v in encoder_dict.items() if k in model_dict})
-        depth_decoder.load_state_dict(torch.load(decoder_path))
+        depth_decoder.load_state_dict(torch.load(decoder_path, map_location=torch.device('cpu')))
 
         encoder.eval()
         depth_decoder.eval()
@@ -176,7 +177,7 @@ def evaluate(opt):
 
         # do inference
         with torch.no_grad():
-            for i, data in tqdm.tqdm(enumerate(dataloader)):
+            for i, data in enumerate(tqdm.tqdm(dataloader)):
                 input_color = data[('color', 0, 0)]
                 if torch.cuda.is_available():
                     input_color = input_color.cuda()

@@ -85,7 +85,7 @@ class Trainer:
             self.opt.num_layers, self.opt.weights_init == "pretrained",
             input_height=self.opt.height, input_width=self.opt.width,
             adaptive_bins=True, min_depth_bin=0.1, max_depth_bin=20.0,
-            depth_binning=self.opt.depth_binning, num_depth_bins=self.opt.num_depth_bins)
+            depth_binning=self.opt.depth_binning, num_depth_bins=self.opt.num_depth_bins, resnet_path=self.opt.resnet_path)
         self.models["encoder"].to(self.device)
 
         self.models["depth"] = networks.DepthDecoder(
@@ -96,7 +96,7 @@ class Trainer:
         self.parameters_to_train += list(self.models["depth"].parameters())
 
         self.models["mono_encoder"] = \
-            networks.ResnetEncoder(18, self.opt.weights_init == "pretrained")
+            networks.ResnetEncoder(18, self.opt.weights_init == "pretrained", resnet_path=self.opt.resnet_path)
         self.models["mono_encoder"].to(self.device)
 
         self.models["mono_depth"] = \
@@ -109,7 +109,7 @@ class Trainer:
 
         self.models["pose_encoder"] = \
             networks.ResnetEncoder(18, self.opt.weights_init == "pretrained",
-                                   num_input_images=self.num_pose_frames)
+                                   num_input_images=self.num_pose_frames, resnet_path=self.opt.resnet_path)
         self.models["pose_encoder"].to(self.device)
 
         self.models["pose"] = \
