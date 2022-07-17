@@ -114,7 +114,9 @@ def evaluate(opt):
                                                      HEIGHT, WIDTH,
                                                      frames_to_load, 4,
                                                      is_train=False)
-
+        elif opt.eval_split == 'nyuv2':
+            dataset = datasets.NYUv2_Test_Dataset(opt.data_path, filenames, HEIGHT, WIDTH,
+                                                 frames_to_load, 4, is_train=False)
         else:
             img_ext = '.png' if opt.png else '.jpg'
             dataset = datasets.KITTIRAWDataset(opt.data_path, filenames,

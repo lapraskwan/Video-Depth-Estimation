@@ -5,3 +5,4 @@ manydepth/pretrained_weights/
 testing/
 training_log/
 splits/eigen/gt_depths.npz
+splits/nyuv2/gt_depths.npz

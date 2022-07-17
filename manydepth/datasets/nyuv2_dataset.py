@@ -282,3 +282,30 @@ class NYUv2_50K_Dataset(NYUv2Dataset):
         else:
             image_path = os.path.join(self.data_path, folder, f"{frame_index}.jpg")
         return image_path
+
+
+class NYUv2_Test_Dataset(NYUv2Dataset):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def get_depth(self, folder, frame_index, do_flip):
+        """Returns a numpy array of the ground truth depth map"""
+        depth_gt = self.loader(self.get_image_path(folder, frame_index, is_depth=True))
+
+        if do_flip:
+            depth_gt = depth_gt.transpose(Image.FLIP_LEFT_RIGHT)
+
+        depth_gt = np.array(depth_gt) / 255 * 10
+        assert np.max(depth_gt) == 10, f"Max depth ({np.max(depth_gt)}) is larger than 10???"
+        return depth_gt
+
+    def get_image_path(self, folder, frame_index, is_depth=False):
+        frame_index = str(frame_index)
+        while len(frame_index) < 5:
+            frame_index = "0" + frame_index
+            
+        if is_depth:
+            image_path = os.path.join(self.data_path, folder, f"{frame_index}_depth.png")
+        else:
+            image_path = os.path.join(self.data_path, folder, f"{frame_index}_colors.png")
+        return image_path
