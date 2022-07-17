@@ -117,7 +117,7 @@ def preprocess_image(image, resize_width, resize_height):
     return image, (original_height, original_width)
 
 
-def get_depth(source_image, input_image, encoder, depth_decoder, pose_enc, pose_dec, encoder_dict, K, invK):
+def get_depth(source_image, input_image, encoder, depth_decoder, pose_enc, pose_dec, encoder_dict, K, invK, compute_intrinsic):
     """Use pretrained model to compute the depth of the input image."""
 
     # Preprocess images
@@ -133,8 +133,19 @@ def get_depth(source_image, input_image, encoder, depth_decoder, pose_enc, pose_
         # Estimate poses
         pose_inputs = [source_image, input_image]
         pose_inputs = [pose_enc(torch.cat(pose_inputs, 1))]
-        axisangle, translation = pose_dec(pose_inputs)
+        axisangle, translation, _K = pose_dec(pose_inputs, compute_intrinsic)
         pose = transformation_from_parameters(axisangle[:, 0], translation[:, 0], invert=True)
+
+        if K is None or invK is None:
+            # quarter resolution for matching
+            K = _K
+            K[:, 0, :] *= encoder_dict['width'] // 4
+            K[:, 1, :] *= encoder_dict['height'] // 4
+            invK = torch.linalg.pinv(K)
+
+            if torch.cuda.is_available():
+                K.cuda()
+                invK.cuda()
 
         if args.mode == 'mono':
             pose *= 0  # zero poses are a signal to the encoder not to construct a cost volume
@@ -211,15 +222,29 @@ def test_video(args):
         assert args.save_path[-4:] == ".avi", \
             "save_path must end with '.avi'"
     
+    # force use_gt_intrinsic to be true if no_compute_intrinsic is true
+    if args.no_compute_intrinsic:
+        args.use_gt_intrinsic = True
+    compute_intrinsic = not args.no_compute_intrinsic
+
+    # check intrinsic path is given when use_gt_intrinsic is true
+    if args.use_gt_intrinsic:
+        assert args.intrinsics_json_path is not None, \
+            "intrinsics_json_path must be given when use_gt_intrinsic is True."
+    
     display = False if args.no_display else True
 
     # Load pretrained models
     encoder, depth_decoder, pose_enc, pose_dec, encoder_dict = load_models(args.model_path)
 
     # Load and preprocess intrinsics
-    K, invK = load_and_preprocess_intrinsics(args.intrinsics_json_path,
-                                             resize_width=encoder_dict['width'],
-                                             resize_height=encoder_dict['height'])                                         
+    if args.intrinsics_json_path and args.use_gt_intrinsic:
+        K, invK = load_and_preprocess_intrinsics(args.intrinsics_json_path,
+                                                resize_width=encoder_dict['width'],
+                                                resize_height=encoder_dict['height']) 
+    else:
+        K = None
+        invK = None
 
     # Initialize variables
     depth_map_deque = deque()
@@ -267,7 +292,7 @@ def test_video(args):
             continue
 
         # Process frame to get depth
-        depth = get_depth(previous_frame, current_frame, encoder, depth_decoder, pose_enc, pose_dec, encoder_dict, K, invK)
+        depth = get_depth(previous_frame, current_frame, encoder, depth_decoder, pose_enc, pose_dec, encoder_dict, K, invK, compute_intrinsic)
 
         depth_map_deque.append(depth)
         

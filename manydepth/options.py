@@ -160,6 +160,12 @@ class MonodepthOptions:
                                  action='store_true',
                                  help="If set, will not apply static camera augmentation or "
                                       "zero cost volume augmentation during training")
+        self.parser.add_argument("--no_compute_intrinsic",
+                                 help="If set, the pose network will not compute intrinsic, and use_gt_intrinsic will be automatically set to true",
+                                 action="store_true")
+        self.parser.add_argument("--use_gt_intrinsic",
+                                 help="If set, use ground truth camera intrinsic matrix for matching",
+                                 action="store_true")
 
         # SYSTEM options
         self.parser.add_argument("--no_cuda",

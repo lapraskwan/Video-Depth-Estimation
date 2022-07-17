@@ -48,6 +48,11 @@ class Trainer:
         assert self.opt.height % 32 == 0, "'height' must be a multiple of 32"
         assert self.opt.width % 32 == 0, "'width' must be a multiple of 32"
 
+        # force use_gt_intrinsic to be true if no_compute_intrinsic is true
+        if self.opt.no_compute_intrinsic:
+            self.opt.use_gt_intrinsic = True
+        self.compute_intrinsic = not self.opt.no_compute_intrinsic
+
         self.models = {}
         self.parameters_to_train = []
 
@@ -270,15 +275,19 @@ class Trainer:
             # log less frequently after the first 2000 steps to save time & disk space
             early_phase = batch_idx % self.opt.log_frequency == 0 and self.step < 2000
             late_phase = self.step % 2000 == 0
+            last_batch = batch_idx == len(self.train_loader) - 1
 
             if early_phase or late_phase:
-                self.log_time(batch_idx, duration, losses["loss"].cpu().data)
+                self.log_time(batch_idx, duration, losses["loss"].cpu().data, losses["K_loss"].cpu().data)
 
                 if "depth_gt" in inputs:
                     self.compute_depth_losses(inputs, outputs, losses)
 
                 self.log("train", inputs, outputs, losses)
                 self.val()
+            
+            if last_batch:
+                self.log_time(batch_idx, duration, losses["loss"].cpu().data, losses["K_loss"].cpu().data)
 
             if self.opt.save_intermediate_models and late_phase:
                 self.save_model(save_step=True)
@@ -357,12 +366,20 @@ class Trainer:
                 _key = tuple(_key)
                 outputs[_key] = mono_outputs[key]
 
+        # Choose camera intrinsic matrix (quarter resolution for matching)
+        if self.opt.use_gt_intrinsic:
+            K = inputs[('K', 2)]
+            inv_K = inputs[('inv_K', 2)]
+        else:
+            K = outputs[('K', 2)]
+            inv_K = outputs[('inv_K', 2)]
+
         # multi frame path
         features, lowest_cost, confidence_mask = self.models["encoder"](inputs["color_aug", 0, 0],
                                                                         lookup_frames,
                                                                         relative_poses,
-                                                                        inputs[('K', 2)],
-                                                                        inputs[('inv_K', 2)],
+                                                                        K,
+                                                                        inv_K,
                                                                         min_depth_bin=min_depth_bin,
                                                                         max_depth_bin=max_depth_bin)
         outputs.update(self.models["depth"](features))
@@ -429,9 +446,16 @@ class Trainer:
 
                     pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1))]
 
-                    axisangle, translation = self.models["pose"](pose_inputs)
+                    axisangle, translation, K = self.models["pose"](pose_inputs, self.compute_intrinsic)
                     outputs[("axisangle", 0, f_i)] = axisangle
                     outputs[("translation", 0, f_i)] = translation
+                    
+                    if self.compute_intrinsic:
+                        for scale in self.opt.scales:
+                            outputs[("K", scale)] = K.clone()
+                            outputs[("K", scale)][:, 0, :] *= self.opt.width // (2 ** scale)
+                            outputs[("K", scale)][:, 1, :] *= self.opt.height // (2 ** scale)
+                            outputs[("inv_K", scale)] = torch.linalg.pinv(outputs[("K", scale)])
 
                     # Invert the matrix if the frame id is negative
                     outputs[("cam_T_cam", 0, f_i)] = transformation_from_parameters(
@@ -445,7 +469,7 @@ class Trainer:
                     if fi < 0:
                         pose_inputs = [pose_feats[fi], pose_feats[fi + 1]]
                         pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1))]
-                        axisangle, translation = self.models["pose"](pose_inputs)
+                        axisangle, translation, K = self.models["pose"](pose_inputs, self.compute_intrinsic)
                         pose = transformation_from_parameters(
                             axisangle[:, 0], translation[:, 0], invert=True)
 
@@ -456,7 +480,7 @@ class Trainer:
                     else:
                         pose_inputs = [pose_feats[fi - 1], pose_feats[fi]]
                         pose_inputs = [self.models["pose_encoder"](torch.cat(pose_inputs, 1))]
-                        axisangle, translation = self.models["pose"](pose_inputs)
+                        axisangle, translation, K = self.models["pose"](pose_inputs, self.compute_intrinsic)
                         pose = transformation_from_parameters(
                             axisangle[:, 0], translation[:, 0], invert=False)
 
@@ -519,10 +543,16 @@ class Trainer:
                     # don't update posenet based on multi frame prediction
                     T = T.detach()
 
-                cam_points = self.backproject_depth[source_scale](
-                    depth, inputs[("inv_K", source_scale)])
-                pix_coords = self.project_3d[source_scale](
-                    cam_points, inputs[("K", source_scale)], T)
+                # Choose camera intrinsic matrix
+                if self.opt.use_gt_intrinsic:
+                    K = inputs[("K", source_scale)]
+                    inv_K = inputs[("inv_K", source_scale)]
+                else:
+                    K = outputs[("K", source_scale)]
+                    inv_K = outputs[("inv_K", source_scale)]
+
+                cam_points = self.backproject_depth[source_scale](depth, inv_K)
+                pix_coords = self.project_3d[source_scale](cam_points, K, T)
 
                 outputs[("sample", frame_id, scale)] = pix_coords
 
@@ -577,6 +607,38 @@ class Trainer:
         mask = ((matching_depth - mono_output) / mono_output) < 1.0
         mask *= ((mono_output - matching_depth) / matching_depth) < 1.0
         return mask[:, 0]
+
+    def compute_intrinsic_loss(self, outputs):
+        """Compute the mse for camera intrinsic for logging purpose"""
+        if self.opt.dataset in ["kitti", "kitti_odom"]:
+            gt_fx = 0.58
+            gt_fy = 1.92
+            gt_cx = 0.5
+            gt_cy = 0.5
+        elif self.opt.dataset in ["nyuv2", "nyuv2_50k"]:
+            gt_fx = 0.8107155
+            gt_fy = 1.0822283
+            gt_cx = 0.5087226
+            gt_cy = 0.528617
+        elif self.opt.dataset in ["cityscapes_preprocessed"]:
+            print("TODO")
+            return None
+        else:
+            return None
+
+        K = outputs[("K", 0)]
+        fx = K[:, 0, 0].mean() / self.opt.width
+        fy = K[:, 1, 1].mean() / self.opt.height
+        cx = K[:, 0, 2].mean() / self.opt.width
+        cy = K[:, 1, 2].mean() / self.opt.height
+
+        fx_loss = torch.abs(fx - gt_fx)
+        fy_loss = torch.abs(fy - gt_fy)
+        cx_loss = torch.abs(cx - gt_cx)
+        cy_loss = torch.abs(cy - gt_cy)
+        K_loss = fx_loss + fy_loss + cx_loss + cy_loss
+
+        return K_loss, fx_loss, fy_loss, cx_loss, cy_loss
 
     def compute_losses(self, inputs, outputs, is_multi=False):
         """Compute the reprojection, smoothness and proxy supervised losses for a minibatch
@@ -684,6 +746,10 @@ class Trainer:
         total_loss /= self.num_scales
         losses["loss"] = total_loss
 
+        intrinsic_losses = self.compute_intrinsic_loss(outputs)
+        if intrinsic_losses is not None:
+            losses["K_loss"], losses["fx_loss"], losses["fy_loss"], losses["cx_loss"], losses["cy_loss"] = intrinsic_losses
+
         return losses
 
     def compute_depth_losses(self, inputs, outputs, losses):
@@ -719,7 +785,7 @@ class Trainer:
         for i, metric in enumerate(self.depth_metric_names):
             losses[metric] = np.array(depth_errors[i].cpu())
 
-    def log_time(self, batch_idx, duration, loss):
+    def log_time(self, batch_idx, duration, loss, K_loss):
         """Print a logging statement to the terminal
         """
         samples_per_sec = self.opt.batch_size / duration
@@ -727,8 +793,8 @@ class Trainer:
         training_time_left = (
             self.num_total_steps / self.step - 1.0) * time_sofar if self.step > 0 else 0
         print_string = "epoch {:>3} | batch {:>6} | examples/s: {:5.1f}" + \
-            " | loss: {:.5f} | time elapsed: {} | time left: {}"
-        print(print_string.format(self.epoch, batch_idx, samples_per_sec, loss,
+            " | loss: {:.5f} | K_loss: {:.5f} | time elapsed: {} | time left: {}"
+        print(print_string.format(self.epoch, batch_idx, samples_per_sec, loss, K_loss,
                                   sec_to_hm_str(time_sofar), sec_to_hm_str(training_time_left)))
 
     def log(self, mode, inputs, outputs, losses):

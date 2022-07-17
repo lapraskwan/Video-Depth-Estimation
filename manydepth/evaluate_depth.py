@@ -79,6 +79,11 @@ def evaluate(opt):
     assert sum((opt.eval_mono, opt.eval_stereo)) == 1, \
         "Please choose mono or stereo evaluation by setting either --eval_mono or --eval_stereo"
 
+    # force use_gt_intrinsic to be true if no_compute_intrinsic is true
+    if opt.no_compute_intrinsic:
+        opt.use_gt_intrinsic = True
+    compute_intrinsic = not opt.no_compute_intrinsic
+
     if opt.ext_disp_to_eval is None:
 
         opt.load_weights_folder = os.path.expanduser(opt.load_weights_folder)
@@ -202,7 +207,7 @@ def evaluate(opt):
                         if fi < 0:
                             pose_inputs = [pose_feats[fi], pose_feats[fi + 1]]
                             pose_inputs = [pose_enc(torch.cat(pose_inputs, 1))]
-                            axisangle, translation = pose_dec(pose_inputs)
+                            axisangle, translation, K = pose_dec(pose_inputs, compute_intrinsic)
                             pose = transformation_from_parameters(
                                 axisangle[:, 0], translation[:, 0], invert=True)
 
@@ -213,7 +218,7 @@ def evaluate(opt):
                         else:
                             pose_inputs = [pose_feats[fi - 1], pose_feats[fi]]
                             pose_inputs = [pose_enc(torch.cat(pose_inputs, 1))]
-                            axisangle, translation = pose_dec(pose_inputs)
+                            axisangle, translation, K = pose_dec(pose_inputs, compute_intrinsic)
                             pose = transformation_from_parameters(
                                 axisangle[:, 0], translation[:, 0], invert=False)
 
@@ -229,8 +234,18 @@ def evaluate(opt):
                     relative_poses = [data[('relative_pose', idx)] for idx in frames_to_load[1:]]
                     relative_poses = torch.stack(relative_poses, 1)
 
-                    K = data[('K', 2)]  # quarter resolution for matching
-                    invK = data[('inv_K', 2)]
+                    if opt.use_gt_intrinsic:
+                        K = data[('K', 2)]  # quarter resolution for matching
+                        invK = data[('inv_K', 2)]
+                    else:
+                        # quarter resolution for matching
+                        K[:, 0, :] *= encoder_dict['width'] // 4
+                        K[:, 1, :] *= encoder_dict['height'] // 4
+                        invK = torch.linalg.pinv(K)
+
+                        if torch.cuda.is_available():
+                            K.cuda()
+                            invK.cuda()
 
                     if torch.cuda.is_available():
                         lookup_frames = lookup_frames.cuda()

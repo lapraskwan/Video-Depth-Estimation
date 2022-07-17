@@ -32,9 +32,9 @@ The labelled dataset (2.8GB) with train and test split: http://horatio.cs.nyu.ed
 
 Download NYUv2 (50K Subset) and NYUv2 test set (4.4GB in total) from DenseDepth(https://github.com/ialhashim/DenseDepth)
 
-This link (https://github.com/svip-lab/Indoor-SfMLearner) has a dataloader similar to monodataset.py that loads NYUv2.
+[Indoor-SfMLearner](https://github.com/svip-lab/Indoor-SfMLearner) has a dataloader similar to monodataset.py that loads NYUv2. It is also a paper that deals with indoor depth estimation.
 
-#### Extract RGB images and depth maps from raw data
+Extract RGB images and depth maps from raw data:
 1. Download the raw dataset and extract it into folder A.
 2. Download the toolbox from the official website, rename the folder as "tools" and put it in folder A.
 3. Convert all RGB and depth map images to png (This command takes days to run. Command with GNU parallel like the one above for KITTI could be faster):
@@ -50,7 +50,7 @@ find . -type f -name '*.ppm' -delete
 matlab -nodisplay -r "cd $(pwd); run('process_raw'); exit;"
 ```
 
-Note: `kitchen_0030a/d-1315161523.972826-49330566.png` and `kitchen_0030a/d-1315161523.929615-47328411.png` might cause an error in `fill_depth_colorization.m`, so I deleted them.
+Note: `kitchen_0030a/d-1315161523.972826-49330566.png` and `kitchen_0030a/d-1315161523.929615-47328411.png` might cause an error in `fill_depth_colorization.m`, so I deleted them. Some folders are empty, so they are deleted as well.
 
 ### Eigen Split
 The paper with Eigen split: https://arxiv.org/pdf/1406.2283.pdf
@@ -60,9 +60,11 @@ Indoor video dataset.
 
 ## Results
 
-| Abs Rel | Sq Rel | RMSE | RMSE(log) | &delta; < 1.25 | &delta; < 1.25<sup>2</sup> | &delta; < 1.25<sup>3</sup> |
-| :-----: | :----: | :--: | :-------: | :------------: | :------------------------: | :------------------------: |
-|         |        |      |           |                |                            |                            |
+|                       | Abs Rel | Sq Rel | RMSE  | RMSE(log) | &delta; < 1.25 | &delta; < 1.25<sup>2</sup> | &delta; < 1.25<sup>3</sup> |
+| :-------------------: | :-----: | :----: | :---: | :-------: | :------------: | :------------------------: | :------------------------: |
+| KITTI                 | 0.092   | 0.711  | 4.238 |  0.171    | 0.910          | 0.966                      | 0.983                      |
+| KITTI (Intrinsic)     | 0.107   | 0.851  | 4.639 |  0.183    | 0.888          | 0.961                      | 0.982                      |
+| NYUv2_50K             | 0.184   | 0.654  | 2.614 |  0.222    | 0.717          | 0.939                      | 0.986                      |
 
 ### Other metrics
 
@@ -74,11 +76,6 @@ Indoor video dataset.
 3. For camera intrinsics, follow [Depth from Videos in the Wild:
 Unsupervised Monocular Depth Learning from Unknown Cameras](https://arxiv.org/abs/1904.04998).
 
-## Learn Camera Intrinsics
-- Modify network
-- Add K whenever pose network is used to predict pose (e.g. in trainer.py line 303)
-- Find all K and inv_K in the files and see if anything need to be added or changed.
-
 ## To do
 
 - [x] Run the codes
@@ -87,9 +84,9 @@ Unsupervised Monocular Depth Learning from Unknown Cameras](https://arxiv.org/ab
 - [x] Train on KITTI to reproduce results
 - [x] Create Dataloader for NYUv2
 - [x] Train on NYUv2 and other indoor datasets (Possible challenges can be found here: https://github.com/nianticlabs/manydepth/issues/35)
-- [ ] Compute additional metrics, e.g. temporal consistency
-- [ ] Learn camera intrinsics
+- [x] Learn camera intrinsics
 - [ ] Improve accuracy
+- [ ] Compute additional metrics, e.g. temporal consistency
 
 ### Other minor changes
 
@@ -104,6 +101,8 @@ Unsupervised Monocular Depth Learning from Unknown Cameras](https://arxiv.org/ab
 3. monodataset.py line 198. Always False??? What is the code for?
 
 4. monodataset.py dummy values, why is the shape (100, 100, 3)?
+
+5. Why is the scale 2 in line 363 of trainer.py? Because the resolution is quartered for matching (warping).
 
 ## Questions
 

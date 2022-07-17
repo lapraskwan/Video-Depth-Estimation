@@ -72,6 +72,16 @@ def test_simple(args):
     """
     assert args.model_path is not None, \
         "You must specify the --model_path parameter"
+    
+    # force use_gt_intrinsic to be true if no_compute_intrinsic is true
+    if args.no_compute_intrinsic:
+        args.use_gt_intrinsic = True
+    compute_intrinsic = not args.no_compute_intrinsic
+
+    # check intrinsic path is given when use_gt_intrinsic is true
+    if args.use_gt_intrinsic:
+        assert args.intrinsics_json_path is not None, \
+            "intrinsics_json_path must be given when use_gt_intrinsic is True."
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     print("-> Loading model from ", args.model_path)
@@ -129,17 +139,29 @@ def test_simple(args):
                                                 resize_width=encoder_dict['width'],
                                                 resize_height=encoder_dict['height'])
 
-    K, invK = load_and_preprocess_intrinsics(args.intrinsics_json_path,
-                                             resize_width=encoder_dict['width'],
-                                             resize_height=encoder_dict['height'])
+    if args.intrinsics_json_path and args.use_gt_intrinsic:
+        K, invK = load_and_preprocess_intrinsics(args.intrinsics_json_path,
+                                                resize_width=encoder_dict['width'],
+                                                resize_height=encoder_dict['height'])
 
     with torch.no_grad():
 
         # Estimate poses
         pose_inputs = [source_image, input_image]
         pose_inputs = [pose_enc(torch.cat(pose_inputs, 1))]
-        axisangle, translation = pose_dec(pose_inputs)
+        axisangle, translation, _K = pose_dec(pose_inputs, compute_intrinsic)
         pose = transformation_from_parameters(axisangle[:, 0], translation[:, 0], invert=True)
+
+        if not args.use_gt_intrinsic:
+            # quarter resolution for matching
+            K = _K
+            K[:, 0, :] *= encoder_dict['width'] // 4
+            K[:, 1, :] *= encoder_dict['height'] // 4
+            invK = torch.linalg.pinv(K)
+            
+            if torch.cuda.is_available():
+                K.cuda()
+                invK.cuda()
 
         if args.mode == 'mono':
             pose *= 0  # zero poses are a signal to the encoder not to construct a cost volume

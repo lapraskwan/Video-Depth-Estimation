@@ -13,6 +13,7 @@ class PoseDecoder(nn.Module):
     def __init__(self, num_ch_enc, num_input_features, num_frames_to_predict_for=None, stride=1):
         super(PoseDecoder, self).__init__()
 
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.num_ch_enc = num_ch_enc
         self.num_input_features = num_input_features
 
@@ -26,11 +27,14 @@ class PoseDecoder(nn.Module):
         self.convs[("pose", 1)] = nn.Conv2d(256, 256, 3, stride, 1)
         self.convs[("pose", 2)] = nn.Conv2d(256, 6 * num_frames_to_predict_for, 1)
 
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.intrinsic_conv = nn.Conv2d(256, 4, 1)
+
         self.relu = nn.ReLU()
 
         self.net = nn.ModuleList(list(self.convs.values()))
 
-    def forward(self, input_features):
+    def forward(self, input_features, compute_intrinsic=True): 
         last_features = [f[-1] for f in input_features]
 
         cat_features = [self.relu(self.convs["squeeze"](f)) for f in last_features]
@@ -41,6 +45,8 @@ class PoseDecoder(nn.Module):
             out = self.convs[("pose", i)](out)
             if i != 2:
                 out = self.relu(out)
+            if i == 1 and compute_intrinsic:
+                intrinsic_head = out.clone()
 
         out = out.mean(3).mean(2)
 
@@ -49,4 +55,18 @@ class PoseDecoder(nn.Module):
         axisangle = out[..., :3]
         translation = out[..., 3:]
 
-        return axisangle, translation
+        if compute_intrinsic:
+            intrinsic_head = self.avg_pool(intrinsic_head) # Shape: (batch_size, channel, 1, 1)
+            intrinsic_head = self.intrinsic_conv(intrinsic_head)
+
+            foci = nn.Softplus()(intrinsic_head[:, :2]).squeeze()
+            offsets = intrinsic_head[:, 2:].squeeze() + 0.5
+            K = torch.zeros((out.shape[0], 4, 4)).to(self.device)
+            K[:, :2, :2] = torch.diag_embed(foci)
+            K[:, :2, 2] = offsets
+            K[:, 2, 2] = 1
+            K[:, 3, 3] = 1
+        else:
+            K = None
+
+        return axisangle, translation, K
