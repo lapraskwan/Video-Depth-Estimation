@@ -277,8 +277,13 @@ class Trainer:
             late_phase = self.step % 2000 == 0
             last_batch = batch_idx == len(self.train_loader) - 1
 
+            if "K_loss" in losses:
+                K_loss = losses["K_loss"].cpu().data
+            else:
+                K_loss = 0
+
             if early_phase or late_phase:
-                self.log_time(batch_idx, duration, losses["loss"].cpu().data, losses["K_loss"].cpu().data)
+                self.log_time(batch_idx, duration, losses["loss"].cpu().data, K_loss)
 
                 if "depth_gt" in inputs:
                     self.compute_depth_losses(inputs, outputs, losses)
@@ -287,7 +292,7 @@ class Trainer:
                 self.val()
             
             if last_batch:
-                self.log_time(batch_idx, duration, losses["loss"].cpu().data, losses["K_loss"].cpu().data)
+                self.log_time(batch_idx, duration, losses["loss"].cpu().data, K_loss)
 
             if self.opt.save_intermediate_models and late_phase:
                 self.save_model(save_step=True)
