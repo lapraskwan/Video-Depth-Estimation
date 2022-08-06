@@ -282,17 +282,22 @@ class Trainer:
             else:
                 K_loss = 0
 
-            if early_phase or late_phase:
-                self.log_time(batch_idx, duration, losses["loss"].cpu().data, K_loss)
+            if early_phase or late_phase or last_batch:
+                self.log_time(batch_idx, duration, losses["loss"].cpu().data, K_loss)                
 
                 if "depth_gt" in inputs:
                     self.compute_depth_losses(inputs, outputs, losses)
+                
+                if self.compute_intrinsic:
+                    # Display predicted intrinsic
+                    K = outputs[("K", 0)].detach().clone()
+                    K[:, 0, :] /= self.opt.width
+                    K[:, 1, :] /= self.opt.height
+                    print("Predicted Camera Intrinsic Matrix")
+                    print(K.mean(0))
 
                 self.log("train", inputs, outputs, losses)
                 self.val()
-            
-            if last_batch:
-                self.log_time(batch_idx, duration, losses["loss"].cpu().data, K_loss)
 
             if self.opt.save_intermediate_models and late_phase:
                 self.save_model(save_step=True)
@@ -376,8 +381,8 @@ class Trainer:
             K = inputs[('K', 2)]
             inv_K = inputs[('inv_K', 2)]
         else:
-            K = outputs[('K', 2)]
-            inv_K = outputs[('inv_K', 2)]
+            K = outputs[('K', 2)].detach()
+            inv_K = outputs[('inv_K', 2)].detach()
 
         # multi frame path
         features, lowest_cost, confidence_mask = self.models["encoder"](inputs["color_aug", 0, 0],
@@ -555,6 +560,9 @@ class Trainer:
                 else:
                     K = outputs[("K", source_scale)]
                     inv_K = outputs[("inv_K", source_scale)]
+                    if is_multi:
+                        K = K.detach()
+                        inv_K = inv_K.detach()
 
                 cam_points = self.backproject_depth[source_scale](depth, inv_K)
                 pix_coords = self.project_3d[source_scale](cam_points, K, T)
@@ -751,9 +759,20 @@ class Trainer:
         total_loss /= self.num_scales
         losses["loss"] = total_loss
 
-        intrinsic_losses = self.compute_intrinsic_loss(outputs)
-        if intrinsic_losses is not None:
-            losses["K_loss"], losses["fx_loss"], losses["fy_loss"], losses["cx_loss"], losses["cy_loss"] = intrinsic_losses
+        if self.compute_intrinsic:
+            # Only run once in process_batch, otherwise the loss will be multiplied by 2 before teacher freezing. 
+            # Run during is_multi, otherwise K_loss will be printed as zero 
+            # because the mono_losses in process_batch will not be added to multi loss after teacher freezing.
+            if is_multi:
+                intrinsic_losses = self.compute_intrinsic_loss(outputs)
+                if intrinsic_losses is not None:
+                    losses["K_loss"], losses["fx_loss"], losses["fy_loss"], losses["cx_loss"], losses["cy_loss"] = intrinsic_losses
+            else:
+                losses["K_loss"] = torch.tensor(0).float().to(self.device)
+                losses["fx_loss"] = torch.tensor(0).float().to(self.device)
+                losses["fy_loss"] = torch.tensor(0).float().to(self.device)
+                losses["cx_loss"] = torch.tensor(0).float().to(self.device)
+                losses["cy_loss"] = torch.tensor(0).float().to(self.device)
 
         return losses
 

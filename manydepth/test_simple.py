@@ -28,14 +28,19 @@ def parse_args():
     parser.add_argument('--source_image_path', type=str,
                         help='path to a previous image in the video sequence', required=True)
     parser.add_argument('--intrinsics_json_path', type=str,
-                        help='path to a json file containing a normalised 3x3 intrinsics matrix',
-                        required=True)
+                        help='path to a json file containing a normalised 3x3 intrinsics matrix')
     parser.add_argument('--model_path', type=str,
                         help='path to a folder of weights to load', required=True)
     parser.add_argument('--mode', type=str, default='multi', choices=('multi', 'mono'),
                         help='"multi" or "mono". If set to "mono" then the network is run without '
                              'the source image, e.g. as described in Table 5 of the paper.',
                         required=False)
+    parser.add_argument("--no_compute_intrinsic",
+                        help="If set, the pose network will not compute intrinsic, and use_gt_intrinsic will be automatically set to true",
+                        action="store_true")
+    parser.add_argument("--use_gt_intrinsic",
+                        help="If set, use ground truth camera intrinsic matrix for matching",
+                        action="store_true")
     return parser.parse_args()
 
 
@@ -73,15 +78,12 @@ def test_simple(args):
     assert args.model_path is not None, \
         "You must specify the --model_path parameter"
     
-    # force use_gt_intrinsic to be true if no_compute_intrinsic is true
-    if args.no_compute_intrinsic:
-        args.use_gt_intrinsic = True
     compute_intrinsic = not args.no_compute_intrinsic
 
-    # check intrinsic path is given when use_gt_intrinsic is true
-    if args.use_gt_intrinsic:
+    # check intrinsic path is given when no_compute_intrinsic is true
+    if not compute_intrinsic:
         assert args.intrinsics_json_path is not None, \
-            "intrinsics_json_path must be given when use_gt_intrinsic is True."
+            "intrinsics_json_path must be given when no_compute_intrinsic is True."
 
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     print("-> Loading model from ", args.model_path)
@@ -139,7 +141,7 @@ def test_simple(args):
                                                 resize_width=encoder_dict['width'],
                                                 resize_height=encoder_dict['height'])
 
-    if args.intrinsics_json_path and args.use_gt_intrinsic:
+    if args.intrinsics_json_path:
         K, invK = load_and_preprocess_intrinsics(args.intrinsics_json_path,
                                                 resize_width=encoder_dict['width'],
                                                 resize_height=encoder_dict['height'])
@@ -152,7 +154,7 @@ def test_simple(args):
         axisangle, translation, _K = pose_dec(pose_inputs, compute_intrinsic)
         pose = transformation_from_parameters(axisangle[:, 0], translation[:, 0], invert=True)
 
-        if not args.use_gt_intrinsic:
+        if not compute_intrinsic:
             # quarter resolution for matching
             K = _K
             K[:, 0, :] *= encoder_dict['width'] // 4

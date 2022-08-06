@@ -27,15 +27,14 @@ def parse_args():
                         help='index of the camera for capturing video',
                         default=0)
     parser.add_argument('--intrinsics_json_path', type=str,
-                        help='path to a json file containing a normalised 3x3 intrinsics matrix',
-                        required=True)
+                        help='path to a json file containing a normalised 3x3 intrinsics matrix')
     parser.add_argument('--model_path', type=str,
                         help='path to a folder of weights to load', required=True)
     parser.add_argument('--save_path', type=str,
                         help='path to save the depth maps as video',
                         required=False)
-    parser.add_argument('--all_frames',
-                        help='compute depth for all frames',
+    parser.add_argument('--real_time',
+                        help='get the latest available frame for real time prediction to minimize delay',
                         action="store_true")
     parser.add_argument('--depth_freq', type=int,
                         help='frequency of computing the depth. For example, depth_freq=2 means the program computes depth every 2 frames, skipping 1 frame in between.',
@@ -47,6 +46,9 @@ def parse_args():
                         help='"multi" or "mono". If set to "mono" then the network is run without '
                              'the source image, e.g. as described in Table 5 of the paper.',
                         required=False)
+    parser.add_argument("--no_compute_intrinsic",
+                        help="If set, the pose network will not compute intrinsic",
+                        action="store_true")
     return parser.parse_args()
 
 
@@ -221,16 +223,13 @@ def test_video(args):
     if args.save_path is not None:
         assert args.save_path[-4:] == ".avi", \
             "save_path must end with '.avi'"
-    
-    # force use_gt_intrinsic to be true if no_compute_intrinsic is true
-    if args.no_compute_intrinsic:
-        args.use_gt_intrinsic = True
+
     compute_intrinsic = not args.no_compute_intrinsic
 
-    # check intrinsic path is given when use_gt_intrinsic is true
-    if args.use_gt_intrinsic:
+    # check intrinsic path is given when no_compute_intrinsic is True
+    if not compute_intrinsic:
         assert args.intrinsics_json_path is not None, \
-            "intrinsics_json_path must be given when use_gt_intrinsic is True."
+            "intrinsics_json_path must be given when no_compute_intrinsic is True."
     
     display = False if args.no_display else True
 
@@ -238,7 +237,7 @@ def test_video(args):
     encoder, depth_decoder, pose_enc, pose_dec, encoder_dict = load_models(args.model_path)
 
     # Load and preprocess intrinsics
-    if args.intrinsics_json_path and args.use_gt_intrinsic:
+    if args.intrinsics_json_path:
         K, invK = load_and_preprocess_intrinsics(args.intrinsics_json_path,
                                                 resize_width=encoder_dict['width'],
                                                 resize_height=encoder_dict['height']) 
@@ -284,11 +283,11 @@ def test_video(args):
             current_frame = frame_queue.get()
             total_frames += 1
 
-            if args.all_frames:
+            if not args.real_time:
                 break
         
         # Skipping frames
-        if args.depth_freq and total_frames % args.depth_freq != 0:
+        if total_frames % args.depth_freq != 0:
             continue
 
         # Process frame to get depth
