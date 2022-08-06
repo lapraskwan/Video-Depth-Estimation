@@ -1,199 +1,189 @@
-# The Temporal Opportunist: Self-Supervised Multi-Frame Monocular Depth
+# Real-Time Video Depth Estimation
 
-[Jamie Watson](https://scholar.google.com/citations?user=5pC7fw8AAAAJ&hl=en),
-[Oisin Mac Aodha](https://homepages.inf.ed.ac.uk/omacaod/),
-[Victor Prisacariu](https://www.robots.ox.ac.uk/~victor/),
-[Gabriel J. Brostow](http://www0.cs.ucl.ac.uk/staff/g.brostow/) and
-[Michael Firman](http://www.michaelfirman.co.uk) – **CVPR 2021**
+A real-time video depth estimation program based on [ManyDepth](https://github.com/nianticlabs/manydepth) and [Depth from videos in the wild](https://github.com/google-research/google-research/tree/master/depth_from_video_in_the_wild).
 
-[[Link to paper]](https://arxiv.org/abs/2104.14540)
+## Set Up Environment:  
+```
+conda create --name manydepth
+conda env update --file environment.yml --prune
+```  
+or 
+```
+conda create --name manydepth
+conda install -c conda-forge opencv matplotlib pytorch=1.11.0 torchvision=0.12.0 scikit-image=0.19.3 numpy=1.19.5 cudatoolkit=11.3
+pip install Pillow==6.2.1 tensorboardX==1.5 tqdm==4.57.0
+```
+If there is an error importing tensorboardX, try `pip install protobuf==3.19.0`.
 
-We introduce ***ManyDepth***, an adaptive approach to dense depth estimation that can make use of sequence information at test time, when it is available.
+## How to Run
+### **To generate a depth map video of your own video**
+```
+python -m manydepth.test_video --model_path <Path to pretrained model> --save_path <Path to save output video (.avi)> --video_path <Path to input video>
+```
+Use `--intrinsics_json_path <Path to intrinsic JSON file>` to provide ground truth camera intrinsic for prediction.  
+Use `--no_display` to disable video display.
 
-* ✅ **Self-supervised**: We train from monocular video only. No depths or poses are needed at training or test time.
-* ✅ Good depths from single frames; even better depths from **short sequences**.
-* ✅ **Efficient**: Only one forward pass at test time. No test-time optimization needed.
-* ✅ **State-of-the-art** self-supervised monocular-trained depth estimation on KITTI and CityScapes.
-
-
-<p align="center">
-  <a
-href="https://storage.googleapis.com/niantic-lon-static/research/manydepth/manydepth_cvpr_cc.mp4">
-  <img src="assets/video_thumbnail.png" alt="5 minute CVPR presentation video link" width="400">
-  </a>
-</p>
-
-
-## Overview
-
-Cost volumes are commonly used for estimating depths from multiple input views:
-
-<p align="center">
-  <img src="assets/cost_volume.jpg" alt="Cost volume used for aggreagting sequences of frames" width="700" />
-</p>
-
-However, cost volumes do not easily work with self-supervised training.
-
-<p align="center">
-  <img src="assets/baseline.gif" alt="Baseline: Depth from cost volume input without our contributions" width="700" />
-</p>
-
-In our paper, we:
-
-* Introduce an adaptive cost volume to deal with unknown scene scales
-* Fix problems with moving objects
-* Introduce augmentations to deal with static cameras and start-of-sequence frames
-
-These contributions enable cost volumes to work with self-supervised training:
-
-<p align="center">
-  <img src="assets/ours.gif" alt="ManyDepth: Depth from cost volume input with our contributions" width="700" />
-</p>
-
-With our contributions, short test-time sequences give better predictions than methods which predict depth from just a single frame.
-
-<p align="center">
-  <img src="assets/manydepth_vs_monodepth2.jpg" alt="ManyDepth vs Monodepth2 depths and error maps" width="700" />
-</p>
-
-## ✏️ 📄 Citation
-
-If you find our work useful or interesting, please cite our paper:
-
-```latex
-@inproceedings{watson2021temporal,
-    author = {Jamie Watson and
-              Oisin Mac Aodha and
-              Victor Prisacariu and
-              Gabriel Brostow and
-              Michael Firman},
-    title = {{The Temporal Opportunist: Self-Supervised Multi-Frame Monocular Depth}},
-    booktitle = {Computer Vision and Pattern Recognition (CVPR)},
-    year = {2021}
-}
+### **To generate depth map using camera input in real time**
+```
+python -m manydepth.test_video --model_path <Path to pretrained model> --real_time
 ```
 
-## 📈 Results
-
-Our **ManyDepth** method outperforms all previous methods in all subsections across most metrics, whether or not the baselines use multiple frames at test time.
-See our paper for full details.
-
-<p align="center">
-  <img src="assets/results_table.png" alt="KITTI results table" width="700" />
-</p>
-
-## 👀 Reproducing Paper Results
-
-To recreate the results from our paper, run:
-
-```bash
-CUDA_VISIBLE_DEVICES=<your_desired_GPU> \
-python -m manydepth.train \
-    --data_path <your_KITTI_path> \
-    --log_dir <your_save_path>  \
-    --model_name <your_model_name>
+### **To train a model**
+Follow the next section to download and preprocess the datasets, then run the commands below.
+```
+python -u -m manydepth.train --data_path <Path to dataset> --log_dir <Path to log> --model_name <Model name> --png --num_workers 12
+```
+KITTI dataset:
+```
+python -m manydepth.train --data_path data_sets/KITTI --log_dir manydepth/log --model_name kitti --png --num_workers 12
+```
+NYUv2 (50K) subset:
+```
+python -m manydepth.train --data_path data_sets/NYUv2_50K --dataset nyuv2_50k --split nyuv2_50k --log_dir manydepth/log --model_name nyu50k --num_workers 12 --max_depth 10.0 --height 288 --width 384
 ```
 
-Depending on the size of your GPU, you may need to set `--batch_size` to be lower than 12. Additionally you can train
-a high resolution model by adding `--height 320 --width 1024`.
-
-For instructions on downloading the KITTI dataset, see [Monodepth2](https://github.com/nianticlabs/monodepth2)
-
-To train a CityScapes model, run:
-
-```bash
-CUDA_VISIBLE_DEVICES=<your_desired_GPU> \
-python -m manydepth.train \
-    --data_path <your_preprocessed_cityscapes_path> \
-    --log_dir <your_save_path>  \
-    --model_name <your_model_name> \
-    --dataset cityscapes_preprocessed \
-    --split cityscapes_preprocessed \
-    --freeze_teacher_epoch 5 \
-    --height 192 --width 512
+Transfer Learning:
+```
+python -m manydepth.train --data_path data_sets/NYUv2_50K --dataset nyuv2_50k --split nyuv2_50k --log_dir manydepth/log --model_name nyu50k_from_kitti_intrinsic --num_workers 12 --max_depth 10.0 --height 192 --width 640 --num_epochs 10 --freeze_teacher_epoch 5 --load_weights_folder manydepth/pretrained_weights/kitti_intrinsic/final
 ```
 
-Note here the `--freeze_teacher_epoch 5` command - we found this to be important for Cityscapes models, due to the large number of images in the training set. 
+--resnet_path: use pre-downloaded resnet models  
+--no_compute_intrinsic: model will not learn to predict camera intrinsic
 
-This assumes you have already preprocessed the CityScapes dataset using SfMLearner's [prepare_train_data.py](https://github.com/tinghuiz/SfMLearner/blob/master/data/prepare_train_data.py) script.
-We used the following command:
-
-```bash
-python prepare_train_data.py \
-    --img_height 512 \
-    --img_width 1024 \
-    --dataset_dir <path_to_downloaded_cityscapes_data> \
-    --dataset_name cityscapes \
-    --dump_root <your_preprocessed_cityscapes_path> \
-    --seq_length 3 \
-    --num_threads 8
+### **To evaluate a model**
+KITTI dataset:  
+Remember to extract ground truth depth before evaluation.
+```
+python -m manydepth.export_gt_depth --data_path <Path to KITTI> --split eigen
+```
+```
+python -m manydepth.evaluate_depth --data_path <Path to KITTI> --load_weights_folder <Path to trained model> --eval_mono --png
+```
+NYUv2（50k:  
+Again, extract the ground truth depth before evaluation.
+```
+python -m manydepth.export_nyuv2_gt_depth --data_path <Path to NYU> --split nyuv2
+```
+```
+python -m manydepth.evaluate_depth --data_path <Path to NYU> --load_weights_folder <Path to trained model> --eval_mono --png --eval_split nyuv2
 ```
 
-Note that while we use the `--img_height 512` flag, the `prepare_train_data.py` script will save images which are `1024x384` as it also crops off the bottom portion of the image.
-You could probably save disk space without a loss of accuracy by preprocessing with `--img_height 256 --img_width 512` (to create `512x192` images), but this isn't what we did for our experiments.
+## Datasets:  
 
-## 💾 Pretrained weights and evaluation
+### KITTI: 
+First download the raw dataset, and convert the images to jpg for faster loading time. More details can be found in [MonoDepth2](https://github.com/nianticlabs/monodepth2).
+1. `wget -i <path to KITTI txt file> -P <path for saving KITTI>`
+2. `find <path to KITTI> -name '*.png' | parallel 'convert -quality 92 -sampling-factor 2x2,1x1,1x1 {.}.png {.}.jpg && rm {}'`
 
-You can download weights for some pretrained models here:
+### NYUv2
+Official Website: https://cs.nyu.edu/~silberman/datasets/nyu_depth_v2.html
 
-* [KITTI MR (640x192)](https://storage.googleapis.com/niantic-lon-static/research/manydepth/models/KITTI_MR.zip)
-* [KITTI HR (1024x320)](https://storage.googleapis.com/niantic-lon-static/research/manydepth/models/KITTI_HR.zip)
-* [CityScapes (512x192)](https://storage.googleapis.com/niantic-lon-static/research/manydepth/models/CityScapes_MR.zip)
+The raw dataset **(428GB)**: http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_raw.zip
 
-To evaluate a model on KITTI, run:
+The labelled dataset (2.8GB) with train and test split: http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_labeled.mat
 
-```bash
-CUDA_VISIBLE_DEVICES=<your_desired_GPU> \
-python -m manydepth.evaluate_depth \
-    --data_path <your_KITTI_path> \
-    --load_weights_folder <your_model_path>
-    --eval_mono
+Download NYUv2 (50K Subset) and NYUv2 test set (4.4GB in total) from DenseDepth(https://github.com/ialhashim/DenseDepth)
+
+[Indoor-SfMLearner](https://github.com/svip-lab/Indoor-SfMLearner) has a dataloader similar to monodataset.py that loads NYUv2. It is also a paper that deals with indoor depth estimation.
+
+Extract RGB images and depth maps from raw data:
+1. Download the raw dataset and extract it into folder A.
+2. Download the toolbox from the official website, rename the folder as "tools" and put it in folder A.
+3. Convert all RGB and depth map images to png (This command takes days to run. Command with GNU parallel like the one above for KITTI could be faster):
+```
+find . -name "*.ppm" -print0|xargs -I{} -0 mogrify -format png {}
+find . -type f -name '*.ppm' -delete
+
+find . -name "*.pgm" -print0|xargs -I{} -0 mogrify -format png {}
+find . -type f -name '*.pgm' -delete
+```
+4. Download `preprocess_raw.m` from https://github.com/wangq95/NYUd2-Toolkit
+5. Line 15 of `preprocess_raw.m` is missing a variable name. Replace it by `for f = 1:numel(nameFolds)`.
+6. Change the `savePath` and `stride` variables as you like. `stride` controls the number of output files. The default value of stride is 1, which will save all images.
+7. Run `process_raw.m`: 
+```
+matlab -nodisplay -r "cd $(pwd); run('process_raw'); exit;"
 ```
 
-Make sure you have first run `export_gt_depth.py` to extract ground truth files.
+Note: `kitchen_0030a/d-1315161523.972826-49330566.png` and `kitchen_0030a/d-1315161523.929615-47328411.png` might cause an error in `fill_depth_colorization.m`, so I deleted them. Some folders are empty, so they are deleted as well.
 
-And to evaluate a model on Cityscapes, run:
+### Eigen Split
+The paper with Eigen split: https://arxiv.org/pdf/1406.2283.pdf
 
-```bash
-CUDA_VISIBLE_DEVICES=<your_desired_GPU> \
-python -m manydepth.evaluate_depth \
-    --data_path <your_cityscapes_path> \
-    --load_weights_folder <your_model_path>
-    --eval_mono \
-    --eval_split cityscapes
-```
+### Scannet
+Indoor video dataset.
 
-During evaluation, we crop and evaluate on the middle 50% of the images.
+## Results
+I: learn intrinsic  
+T: transfer learning
 
-We provide ground truth depth files [HERE](https://storage.googleapis.com/niantic-lon-static/research/manydepth/gt_depths_cityscapes.zip),
-which were converted from pixel disparities using intrinsics and the known baseline. Download this and unzip into `splits/cityscapes`.
+|                   | WxH      | Abs Rel | Sq Rel | RMSE  | RMSE(log) |   | &delta; < 1.25 | &delta; < 1.25<sup>2</sup> | &delta; < 1.25<sup>3</sup> |
+| :---------------: | :------: | :-----: | :----: | :---: | :-------: |:-:| :------------: | :------------------------: | :------------------------: |
+| KITTI             | 1024x320 | 0.092   | 0.711  | 4.238 |  0.171    |   | 0.910          | 0.966                      | 0.983                      |
+| KITTI             | 640x192  | 0.103   | 0.837  | 4.569 |  0.180    |   | 0.896          | 0.963                      | 0.982                      |
+| KITTI (I)         | 640x192  | 0.102   | 0.790  | 4.528 |  0.179    |   | 0.896          | 0.964                      | 0.983                      |
+||
+| NYUv2_50K         | 384x288  | 0.182   | 0.647  | 2.593 |  0.222    |   | 0.721          | 0.938                      | 0.985                      |
+| NYUv2_50K (I)     | 384x288  | 0.350   | 1.959  | 4.091 |  0.383    |   | 0.478          | 0.762                      | 0.899                      |
+| NYUv2_50K (I + T) | 384x288  | 0.174   | 0.541  | 2.384 |  0.216    |   | 0.731          | 0.943                      | 0.986                      |
+| NYUv2_50K (I + T) | 640x192  | 0.202   | 0.736  | 2.770 |  0.244    |   | 0.662          | 0.922                      | 0.982                      |
 
 
-If you want to evaluate a teacher network (i.e. the monocular network used for consistency loss), then add the flag `--eval_teacher`. This will 
-load the weights of `mono_encoder.pth` and `mono_depth.pth`, which are provided for our KITTI models. 
+### Other metrics
 
-## 🖼 Running on your own images
+1. Frame per second (FPS)
+2. Temporal Consistency 
+    - Absolute relative temporal error (ARTE) in [*Do not Forget the Past: Recurrent Depth Estimation from Monocular Video*](https://arxiv.org/abs/2001.02613).
+    - Instability and drift in [*Consistent Video Depth Estimation*](https://roxanneluo.github.io/Consistent-Video-Depth-Estimation/).
+    - Temporal consistency loss in [*Enforcing Temporal Consistency in Video Depth Estimation*](https://openaccess.thecvf.com/content/ICCV2021W/PBDL/papers/Li_Enforcing_Temporal_Consistency_in_Video_Depth_Estimation_ICCVW_2021_paper.pdf) or [Exploiting temporal consistency for real-time video depth estimation](https://arxiv.org/abs/1908.03706).
+3. For camera intrinsics, follow [Depth from Videos in the Wild:
+Unsupervised Monocular Depth Learning from Unknown Cameras](https://arxiv.org/abs/1904.04998).
 
-We provide some sample code in `test_simple.py` which demonstrates multi-frame inference.
-This predicts depth for a sequence of two images cropped from a [dashcam video](https://www.youtube.com/watch?v=sF0wXxZwISw).
-Prediction also requires an estimate of the intrinsics matrix, in json format.
-For the provided test images, we have estimated the intrinsics to be equivalent to those of the KITTI dataset.
-Note that the intrinsics provided in the json file are expected to be in [normalised coordinates](https://github.com/nianticlabs/monodepth2/issues/6#issuecomment-494407590).
+## To do
 
-Download and unzip model weights from one of the links above, and then run the following command:
+- [x] Run the codes
+- [x] Real Time Video Prediction
+- [x] Video Prediction (All frames)
+- [x] Train on KITTI to reproduce results
+- [x] Create Dataloader for NYUv2
+- [x] Train on NYUv2 and other indoor datasets (Possible challenges can be found here: https://github.com/nianticlabs/manydepth/issues/35)
+- [x] Learn camera intrinsics
+- [ ] Improve accuracy
+- [ ] Compute additional metrics, e.g. temporal consistency
 
-```bash
-python -m manydepth.test_simple \
-    --target_image_path assets/test_sequence_target.jpg \
-    --source_image_path assets/test_sequence_source.jpg \
-    --intrinsics_json_path assets/test_sequence_intrinsics.json \
-    --model_path path/to/weights
-```
+### Other minor changes
 
-A predicted depth map rendering will be saved to `assets/test_sequence_target_disp.jpeg`.
+- [x] Print loss at the end of training
+- [ ] Adjust intrinsics during inference?
 
-## 👩‍⚖️ License
+## Notes
 
-Copyright © Niantic, Inc. 2021. Patent Pending.
-All rights reserved.
-Please see the [license file](LICENSE) for terms.
+1. Two minor modifications were made following the suggestion [here](https://github.com/nianticlabs/manydepth/issues/32).
+
+2. `frame_idxs == "s"` means the opposite stereo frame.
+
+3. monodataset.py line 198. Always False??? What is the code for?
+
+4. Scale 2 in line 363 of trainer.py because the resolution is quartered for matching (warping).
+
+### Questions
+
+1. NYUv2 images are unaligned??? According to: https://arxiv.org/pdf/2007.07696.pdf
+
+2. What is the train test split??? There are so many different versions...
+
+3. Can't compare with other papers because most of them uses the official test split, which is not a video sequence. Split the raw dataset myself, train with sequences from several scenes and evaluate with sequences from other scenes? Compare in ablation study only? Can still compare with benchmarks, just cannot utilize the cost volume in the model.
+
+## References
+
+1. ManyDepth:  
+https://github.com/nianticlabs/manydepth
+
+2. Official implementation of *Depth from videos in the wild*:  
+https://github.com/google-research/google-research/tree/master/depth_from_video_in_the_wild
+
+3. Pytorch implementation of *Depth from videos in the wild*:  
+https://github.com/bolianchen/pytorch_depth_from_videos_in_the_wild
+
+4. Indoor-SfMLearner:  
+https://github.com/svip-lab/Indoor-SfMLearner
