@@ -149,17 +149,14 @@ class BackprojectDepth(nn.Module):
 
         meshgrid = np.meshgrid(range(self.width), range(self.height), indexing='xy')
         self.id_coords = np.stack(meshgrid, axis=0).astype(np.float32)
-        self.id_coords = nn.Parameter(torch.from_numpy(self.id_coords),
-                                      requires_grad=False)
+        self.id_coords = torch.from_numpy(self.id_coords)
 
-        self.ones = nn.Parameter(torch.ones(self.batch_size, 1, self.height * self.width),
-                                 requires_grad=False)
+        self.ones = torch.ones(self.batch_size, 1, self.height * self.width)
 
         self.pix_coords = torch.unsqueeze(torch.stack(
             [self.id_coords[0].view(-1), self.id_coords[1].view(-1)], 0), 0)
         self.pix_coords = self.pix_coords.repeat(batch_size, 1, 1)
-        self.pix_coords = nn.Parameter(torch.cat([self.pix_coords, self.ones], 1),
-                                       requires_grad=False)
+        self.pix_coords = torch.cat([self.pix_coords, self.ones], 1)
 
     def forward(self, depth, inv_K):
         cam_points = torch.matmul(inv_K[:, :3, :3], self.pix_coords)
@@ -167,6 +164,26 @@ class BackprojectDepth(nn.Module):
         cam_points = torch.cat([cam_points, self.ones], 1)
 
         return cam_points
+
+    def cuda(self):
+        super().cuda()
+        self.id_coords = self.id_coords.cuda()
+        self.ones = self.ones.cuda()
+        self.pix_coords = self.pix_coords.cuda()
+
+    def cpu(self):
+        super().cpu()
+        self.id_coords = self.id_coords.cpu()
+        self.ones = self.ones.cpu()
+        self.pix_coords = self.pix_coords.cpu()
+    
+    def to(self, device):
+        if str(device) == 'cpu':
+            self.cpu()
+        elif str(device) == 'cuda':
+            self.cuda()
+        else:
+            raise NotImplementedError
 
 
 class Project3D(nn.Module):

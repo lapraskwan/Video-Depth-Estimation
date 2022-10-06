@@ -405,10 +405,13 @@ def evaluate(opt):
         print(" Scaling ratios | med: {:0.3f} | std: {:0.3f}".format(med, np.std(ratios / med)))
 
     mean_errors = np.array(errors).mean(0)
+    std_errors = np.array(errors).std(0)
 
     print("\n  " + ("{:>8} | " * 7).format("abs_rel",
                                            "sq_rel", "rmse", "rmse_log", "a1", "a2", "a3"))
     print(("&{: 8.3f}  " * 7).format(*mean_errors.tolist()) + "\\\\")
+    print(("&{: 8.3f}  " * 7).format(*std_errors.tolist()) + "\\\\")
+    print(f"${mean_errors[0]:.3f} \pm {std_errors[0]:.3f}$ & ${mean_errors[1]:.3f} \pm {std_errors[1]:.3f}$ & ${mean_errors[2]:.3f} \pm {std_errors[2]:.3f}$ & ${mean_errors[3]:.3f} \pm {std_errors[3]:.3f}$ & ${mean_errors[4]:.3f} \pm {std_errors[4]:.3f}$ & ${mean_errors[5]:.3f} \pm {std_errors[5]:.3f}$ & ${mean_errors[6]:.3f} \pm {std_errors[6]:.3f}$")
     print("\n-> Done!")
 
 

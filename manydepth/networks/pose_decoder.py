@@ -59,8 +59,9 @@ class PoseDecoder(nn.Module):
             intrinsic_head = self.avg_pool(intrinsic_head) # Shape: (batch_size, channel, 1, 1)
             intrinsic_head = self.intrinsic_conv(intrinsic_head)
 
-            foci = nn.Softplus()(intrinsic_head[:, :2]).squeeze()
-            offsets = intrinsic_head[:, 2:].squeeze() + 0.5
+            alpha = 1
+            foci = nn.Softplus()(alpha * intrinsic_head[:, :2]).squeeze()
+            offsets = alpha * intrinsic_head[:, 2:].squeeze() + 0.5
             K = torch.zeros((out.shape[0], 4, 4)).to(self.device)
             K[:, :2, :2] = torch.diag_embed(foci)
             K[:, :2, 2] = offsets

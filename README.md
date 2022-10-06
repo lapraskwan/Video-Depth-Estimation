@@ -5,11 +5,13 @@ A real-time video depth estimation program based on [ManyDepth](https://github.c
 ## Set Up Environment:  
 ```
 conda create --name manydepth
+conda activate manydepth
 conda env update --file environment.yml --prune
 ```  
 or 
 ```
 conda create --name manydepth
+conda activate manydepth
 conda install -c conda-forge opencv matplotlib pytorch=1.11.0 torchvision=0.12.0 scikit-image=0.19.3 numpy=1.19.5 cudatoolkit=11.3
 pip install Pillow==6.2.1 tensorboardX==1.5 tqdm==4.57.0
 ```
@@ -27,22 +29,23 @@ Use `--no_display` to disable video display.
 ```
 python -m manydepth.test_video --model_path <Path to pretrained model> --real_time
 ```
+Use `--camera_index <index>` to choose camera.
 
 ### **To train a model**
-Follow the next section to download and preprocess the datasets, then run the commands below.
+Follow the next section to download and preprocess the datasets, then run the command below.
 ```
 python -u -m manydepth.train --data_path <Path to dataset> --log_dir <Path to log> --model_name <Model name> --png --num_workers 12
 ```
-KITTI dataset:
+Example for KITTI dataset:
 ```
 python -m manydepth.train --data_path data_sets/KITTI --log_dir manydepth/log --model_name kitti --png --num_workers 12
 ```
-NYUv2 (50K) subset:
+Example for NYUv2 (50K) subset:
 ```
 python -m manydepth.train --data_path data_sets/NYUv2_50K --dataset nyuv2_50k --split nyuv2_50k --log_dir manydepth/log --model_name nyu50k --num_workers 12 --max_depth 10.0 --height 288 --width 384
 ```
 
-Transfer Learning:
+Example for Transfer Learning:
 ```
 python -m manydepth.train --data_path data_sets/NYUv2_50K --dataset nyuv2_50k --split nyuv2_50k --log_dir manydepth/log --model_name nyu50k_from_kitti_intrinsic --num_workers 12 --max_depth 10.0 --height 192 --width 640 --num_epochs 10 --freeze_teacher_epoch 5 --load_weights_folder manydepth/pretrained_weights/kitti_intrinsic/final
 ```
@@ -59,7 +62,7 @@ python -m manydepth.export_gt_depth --data_path <Path to KITTI> --split eigen
 ```
 python -m manydepth.evaluate_depth --data_path <Path to KITTI> --load_weights_folder <Path to trained model> --eval_mono --png
 ```
-NYUv2（50k:  
+NYUv2:  
 Again, extract the ground truth depth before evaluation.
 ```
 python -m manydepth.export_nyuv2_gt_depth --data_path <Path to NYU> --split nyuv2
@@ -68,7 +71,7 @@ python -m manydepth.export_nyuv2_gt_depth --data_path <Path to NYU> --split nyuv
 python -m manydepth.evaluate_depth --data_path <Path to NYU> --load_weights_folder <Path to trained model> --eval_mono --png --eval_split nyuv2
 ```
 
-## Datasets:  
+## Datasets
 
 ### KITTI: 
 First download the raw dataset, and convert the images to jpg for faster loading time. More details can be found in [MonoDepth2](https://github.com/nianticlabs/monodepth2).
@@ -76,13 +79,13 @@ First download the raw dataset, and convert the images to jpg for faster loading
 2. `find <path to KITTI> -name '*.png' | parallel 'convert -quality 92 -sampling-factor 2x2,1x1,1x1 {.}.png {.}.jpg && rm {}'`
 
 ### NYUv2
+Download NYUv2 (50K Subset) and NYUv2 test set (4.4GB in total) from DenseDepth(https://github.com/ialhashim/DenseDepth)
+
+If you need to use the raw dataset, you may follow the following links and instructions below.
+
 Official Website: https://cs.nyu.edu/~silberman/datasets/nyu_depth_v2.html
 
 The raw dataset **(428GB)**: http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_raw.zip
-
-The labelled dataset (2.8GB) with train and test split: http://horatio.cs.nyu.edu/mit/silberman/nyu_depth_v2/nyu_depth_v2_labeled.mat
-
-Download NYUv2 (50K Subset) and NYUv2 test set (4.4GB in total) from DenseDepth(https://github.com/ialhashim/DenseDepth)
 
 [Indoor-SfMLearner](https://github.com/svip-lab/Indoor-SfMLearner) has a dataloader similar to monodataset.py that loads NYUv2. It is also a paper that deals with indoor depth estimation.
 
@@ -106,28 +109,6 @@ matlab -nodisplay -r "cd $(pwd); run('process_raw'); exit;"
 ```
 
 Note: `kitchen_0030a/d-1315161523.972826-49330566.png` and `kitchen_0030a/d-1315161523.929615-47328411.png` might cause an error in `fill_depth_colorization.m`, so I deleted them. Some folders are empty, so they are deleted as well.
-
-### Eigen Split
-The paper with Eigen split: https://arxiv.org/pdf/1406.2283.pdf
-
-### Scannet
-Indoor video dataset.
-
-## Results
-I: learn intrinsic  
-T: transfer learning
-
-|                   | WxH      | Abs Rel | Sq Rel | RMSE  | RMSE(log) |   | &delta; < 1.25 | &delta; < 1.25<sup>2</sup> | &delta; < 1.25<sup>3</sup> |
-| :---------------: | :------: | :-----: | :----: | :---: | :-------: |:-:| :------------: | :------------------------: | :------------------------: |
-| KITTI             | 1024x320 | 0.092   | 0.711  | 4.238 |  0.171    |   | 0.910          | 0.966                      | 0.983                      |
-| KITTI             | 640x192  | 0.103   | 0.837  | 4.569 |  0.180    |   | 0.896          | 0.963                      | 0.982                      |
-| KITTI (I)         | 640x192  | 0.102   | 0.790  | 4.528 |  0.179    |   | 0.896          | 0.964                      | 0.983                      |
-||
-| NYUv2_50K         | 384x288  | 0.182   | 0.647  | 2.593 |  0.222    |   | 0.721          | 0.938                      | 0.985                      |
-| NYUv2_50K (I)     | 384x288  | 0.350   | 1.959  | 4.091 |  0.383    |   | 0.478          | 0.762                      | 0.899                      |
-| NYUv2_50K (I + T) | 384x288  | 0.174   | 0.541  | 2.384 |  0.216    |   | 0.731          | 0.943                      | 0.986                      |
-| NYUv2_50K (I + T) | 640x192  | 0.202   | 0.736  | 2.770 |  0.244    |   | 0.662          | 0.922                      | 0.982                      |
-
 
 ### Other metrics
 
@@ -165,14 +146,6 @@ Unsupervised Monocular Depth Learning from Unknown Cameras](https://arxiv.org/ab
 3. monodataset.py line 198. Always False??? What is the code for?
 
 4. Scale 2 in line 363 of trainer.py because the resolution is quartered for matching (warping).
-
-### Questions
-
-1. NYUv2 images are unaligned??? According to: https://arxiv.org/pdf/2007.07696.pdf
-
-2. What is the train test split??? There are so many different versions...
-
-3. Can't compare with other papers because most of them uses the official test split, which is not a video sequence. Split the raw dataset myself, train with sequences from several scenes and evaluate with sequences from other scenes? Compare in ablation study only? Can still compare with benchmarks, just cannot utilize the cost volume in the model.
 
 ## References
 
