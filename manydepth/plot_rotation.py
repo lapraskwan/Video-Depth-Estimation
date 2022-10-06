@@ -38,7 +38,7 @@ def parse_args():
                         help="dataset to train on",
                         default="kitti",
                         choices=["kitti", "kitti_odom", "kitti_depth", "kitti_test",
-                                "cityscapes_preprocessed", "nyuv2", "nyuv2_50k"])
+                                "cityscapes_preprocessed", "nyuv2", "nyuv2_50k", "nyuv2_rectified"])
     parser.add_argument("--split",
                         type=str,
                         help="which training split to use",
@@ -138,7 +138,8 @@ def load_dataset(args):
                         "cityscapes_preprocessed": datasets.CityscapesPreprocessedDataset,
                         "kitti_odom": datasets.KITTIOdomDataset,
                         "nyuv2": datasets.NYUv2RawDataset,
-                        "nyuv2_50k": datasets.NYUv2_50K_Dataset}
+                        "nyuv2_50k": datasets.NYUv2_50K_Dataset,
+                        "nyuv2_rectified": datasets.NYUv2_Rectified_Dataset}
     dataset = datasets_dict[args.dataset]
 
     assert os.path.isdir(os.path.join("splits", args.split)), \
@@ -263,7 +264,7 @@ def plot_rotation(rotation, args):
         gt_fy = 1.92
         gt_cx = 0.5
         gt_cy = 0.5
-    elif args.dataset in ["nyuv2", "nyuv2_50k"]:
+    elif args.dataset in ["nyuv2", "nyuv2_50k", "nyuv2_rectified"]:
         gt_fx = 0.8107155
         gt_fy = 1.0822283
         gt_cx = 0.5087226

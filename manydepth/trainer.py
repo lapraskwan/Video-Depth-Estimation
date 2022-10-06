@@ -146,7 +146,8 @@ class Trainer:
                          "cityscapes_preprocessed": datasets.CityscapesPreprocessedDataset,
                          "kitti_odom": datasets.KITTIOdomDataset,
                          "nyuv2": datasets.NYUv2RawDataset,
-                         "nyuv2_50k": datasets.NYUv2_50K_Dataset}
+                         "nyuv2_50k": datasets.NYUv2_50K_Dataset,
+                         "nyuv2_rectified": datasets.NYUv2_Rectified_Dataset}
         self.dataset = datasets_dict[self.opt.dataset]
 
         fpath = os.path.join("splits", self.opt.split, "{}_files.txt")
@@ -628,7 +629,7 @@ class Trainer:
             gt_fy = 1.92
             gt_cx = 0.5
             gt_cy = 0.5
-        elif self.opt.dataset in ["nyuv2", "nyuv2_50k"]:
+        elif self.opt.dataset in ["nyuv2", "nyuv2_50k", "nyuv2_rectified"]:
             gt_fx = 0.8107155
             gt_fy = 1.0822283
             gt_cx = 0.5087226

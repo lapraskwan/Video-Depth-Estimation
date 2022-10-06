@@ -29,7 +29,7 @@ def pil_loader(path):
             return img.convert('RGB')
 
 
-class NYUv2Dataset(data.Dataset):
+class NYUv2_Rectified_Dataset(data.Dataset):
     """Superclass for monocular dataloaders
     """
 
@@ -53,25 +53,13 @@ class NYUv2Dataset(data.Dataset):
 
         self.interp = transforms.InterpolationMode.LANCZOS
         self.frame_idxs = frame_idxs
+        assert self.frame_idxs == [0, -1], "frame_idxs must be [0, -1] for rectified nyuv2 dataset."
 
         self.is_train = is_train
         self.img_ext = img_ext
 
         self.loader = pil_loader
         self.to_tensor = transforms.ToTensor()
-
-        # Intrinsic Matrix
-        # NOTE: Make sure your intrinsics matrix is *normalized* by the original image size
-        fx = 5.1885790117450188e+02
-        fy = 5.1946961112127485e+02
-        cx = 3.2558244941119034e+02
-        cy = 2.5373616633400465e+02
-        self.K = np.array([[fx, 0., cx, 0.],
-                           [0., fy, cy, 0.],
-                           [0., 0., 1., 0.],
-                           [0., 0., 0., 1.]], dtype=np.float32)
-        self.K[0, :] /= 640
-        self.K[1, :] /= 480
 
         # We need to specify augmentations differently in newer versions of torchvision.
         # We first try the newer tuple version; if this fails we fall back to scalars
@@ -123,8 +111,29 @@ class NYUv2Dataset(data.Dataset):
     def __len__(self):
         return len(self.filenames)
 
-    def load_intrinsics(self):
-        return self.K.copy()
+    def load_intrinsics(self, folder, index):
+        if self.is_train:
+            intrinsic_file = os.path.join(self.data_path, folder, f"{index:06}_cam.txt")
+        else:
+            intrinsic_file = os.path.join(self.data_path, folder, "cam.txt")
+
+        with open(intrinsic_file, "r") as f:
+            lines = f.readlines()
+
+        fx = lines[0].split()[0]
+        fy = lines[1].split()[1]
+        cx = lines[0].split()[2]
+        cy = lines[1].split()[2]
+
+        K = np.array([[fx, 0., cx, 0.],
+                           [0., fy, cy, 0.],
+                           [0., 0., 1., 0.],
+                           [0., 0., 0., 1.]], dtype=np.float32)
+        
+        K[0, :] /= 320
+        K[1, :] /= 256
+
+        return K
     
     def index_to_folder_and_frame_idx(self, index):
         """Convert index in the dataset to a folder name, frame_idx and any other bits
@@ -135,8 +144,8 @@ class NYUv2Dataset(data.Dataset):
 
         return folder, frame_index
     
-    def get_color(self, folder, frame_index, do_flip):
-        color = self.loader(self.get_image_path(folder, frame_index, is_depth=False))
+    def get_color(self, folder, frame_index, id, do_flip):
+        color = self.loader(self.get_image_path(folder, frame_index, id))
 
         if do_flip:
             color = color.transpose(Image.FLIP_LEFT_RIGHT)
@@ -174,7 +183,7 @@ class NYUv2Dataset(data.Dataset):
         poses = {}
         for i in self.frame_idxs:
             try:
-                inputs[("color", i, -1)] = self.get_color(folder, frame_index + i, do_flip)
+                inputs[("color", i, -1)] = self.get_color(folder, frame_index, i, do_flip)
             except FileNotFoundError as e:
                 if i != 0:
                     # fill with dummy values
@@ -182,12 +191,11 @@ class NYUv2Dataset(data.Dataset):
                     poses[i] = None
                 else:
                     raise FileNotFoundError(f'Cannot find frame - make sure your '
-                                            f'--data_path is set correctly, or try adding'
-                                            f' the --png flag. {e}')
+                                            f'--data_path is set correctly. {e}')
 
         # adjusting intrinsics to match each scale in the pyramid
         for scale in range(self.num_scales):
-            K = self.load_intrinsics()
+            K = self.load_intrinsics(folder, frame_index)
 
             K[0, :] *= self.width // (2 ** scale)
             K[1, :] *= self.height // (2 ** scale)
@@ -217,21 +225,16 @@ class NYUv2Dataset(data.Dataset):
         return inputs
 
     def check_depth(self):
+        if self.is_train:
+            return False
         return True
 
-    def get_depth(self, folder, frame_index, is_depth):
-        raise NotImplementedError
-    
-    def get_image_path(self, folder, frame_index, is_depth=False):
-        raise NotImplementedError
-
-class NYUv2RawDataset(NYUv2Dataset):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     def get_depth(self, folder, frame_index, do_flip):
         """Returns a numpy array of the ground truth depth map"""
-        depth_gt = self.loader(self.get_image_path(folder, frame_index, is_depth=True))
+        if self.is_train:
+            raise NotImplementedError
+
+        depth_gt = self.loader(os.path.join(self.data_path, folder, "depth", f"{frame_index:06}.png"))
 
         if do_flip:
             depth_gt = depth_gt.transpose(Image.FLIP_LEFT_RIGHT)
@@ -239,59 +242,10 @@ class NYUv2RawDataset(NYUv2Dataset):
         depth_gt = np.array(depth_gt) / 255 * 10
         return depth_gt
 
-    def get_image_path(self, folder, frame_index, is_depth=False):
-        if is_depth:
-            image_path = os.path.join(self.data_path, folder, f"{folder}{frame_index}depth.{self.img_ext}")
+    def get_image_path(self, folder, frame_index, id):
+        if self.is_train:
+            # Use 000000_0.jpg as the previous frame (frame -1) and 000000_1.jpg as the target frame (frame 0)
+            image_path = os.path.join(self.data_path, folder, f"{frame_index:06}_{id + 1}.jpg")
         else:
-            image_path = os.path.join(self.data_path, folder, f"{folder}{frame_index}rgb.{self.img_ext}")
-        return image_path
-
-
-class NYUv2_50K_Dataset(NYUv2Dataset):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def get_depth(self, folder, frame_index, do_flip):
-        """Returns a numpy array of the ground truth depth map"""
-        depth_gt = self.loader(self.get_image_path(folder, frame_index, is_depth=True))
-
-        if do_flip:
-            depth_gt = depth_gt.transpose(Image.FLIP_LEFT_RIGHT)
-
-        depth_gt = np.array(depth_gt) / 255 * 10
-        assert np.max(depth_gt) == 10, f"Max depth ({np.max(depth_gt)}) is larger than 10???"
-        return depth_gt
-
-    def get_image_path(self, folder, frame_index, is_depth=False):
-        if is_depth:
-            image_path = os.path.join(self.data_path, folder, f"{frame_index}.png")
-        else:
-            image_path = os.path.join(self.data_path, folder, f"{frame_index}.jpg")
-        return image_path
-
-
-class NYUv2_Test_Dataset(NYUv2Dataset):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def get_depth(self, folder, frame_index, do_flip):
-        """Returns a numpy array of the ground truth depth map"""
-        depth_gt = self.loader(self.get_image_path(folder, frame_index, is_depth=True))
-
-        if do_flip:
-            depth_gt = depth_gt.transpose(Image.FLIP_LEFT_RIGHT)
-
-        depth_gt = np.array(depth_gt) / 255 * 10
-        assert np.max(depth_gt) == 10, f"Max depth ({np.max(depth_gt)}) is larger than 10???"
-        return depth_gt
-
-    def get_image_path(self, folder, frame_index, is_depth=False):
-        frame_index = str(frame_index)
-        while len(frame_index) < 5:
-            frame_index = "0" + frame_index
-            
-        if is_depth:
-            image_path = os.path.join(self.data_path, folder, f"{frame_index}_depth.png")
-        else:
-            image_path = os.path.join(self.data_path, folder, f"{frame_index}_colors.png")
+            image_path = os.path.join(self.data_path, folder, f"{frame_index:06}.jpg")
         return image_path
